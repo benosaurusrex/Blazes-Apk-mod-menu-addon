@@ -1,3 +1,4 @@
+
 name: check and build mods
 
 on:
@@ -33,6 +34,9 @@ jobs:
         uses: nttld/setup-ndk@v1
         with:
           ndk-version: r27c
+
+      - name: Clean old build
+        run: rm -rf build
 
       - name: Build
         run: |
