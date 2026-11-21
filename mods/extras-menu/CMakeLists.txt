@@ -1,1 +1,1 @@
-add_yeeps_mod(starter-menu src/menu.cpp)
+add_yeeps_mod(extras-menu src/menu.cpp)
