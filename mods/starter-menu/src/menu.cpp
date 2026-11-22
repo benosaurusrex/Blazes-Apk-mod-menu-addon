@@ -614,12 +614,6 @@ static void PresetDelete();
 static void PresetsEnsure();
 static void PresetSaveCurrent(const std::string &name);
 static void MenuRebuild();
-static void Radio(bool **flags, bool *prev, int n);
-static const char *FlingName(int i);
-static void EggEnsure();
-static void FlingGunAim(Vector3 start, Vector3 dir);
-static void SkyboxRestore();
-static int LockTargetPersist(Vector3 from, bool gripHeld);
 static void SkyPicked();
 static int LockTarget(Vector3 from);
 static void TextDefault();
@@ -735,12 +729,6 @@ struct Item {
     const char *(*iname)(int) = nullptr;   // SLIDER: the text for a position
     int arg = 0;                          // ACTION: a number the callback can read (g_pressArg)
 };
-
-// State used by features defined later in this file but referenced by earlier menu code.
-static std::deque<Item> g_eggItems;
-static int g_stayTarget = -1;
-static bool g_stayGripPrev = false;
-
 // Leo's layout. Keep this order.
 static Item g_items[] = {
     {MAIN, "Enabled Mods", OPEN, ENABLED},
@@ -6755,6 +6743,7 @@ static bool EggColorsFor(const char *mob, const char **primary, const char **sec
         if (!strcmp(e.mob, mob)) { *primary = e.primary; *secondary = e.secondary; return true; }
     return false;
 }
+static std::deque<Item> g_eggItems;
 static bool g_eggInit = false;
 static void SpawnEgg(const char *mob) {
     Il2CppObject *head = g_head.get();
@@ -8480,6 +8469,8 @@ static void PresetDelete() {
 
 // ---- Stay Locked: once a gun that affects other players picks a target, it keeps that target
 // (instead of re-picking the closest every frame) until you let go of the grip. ----
+static int g_stayTarget = -1;
+static bool g_stayGripPrev = false;
 static int LockTargetPersist(Vector3 from, bool gripHeld) {
     if (!f_stayLocked) return LockTarget(from);
     if (!gripHeld) { g_stayTarget = -1; g_stayGripPrev = false; return LockTarget(from); }
