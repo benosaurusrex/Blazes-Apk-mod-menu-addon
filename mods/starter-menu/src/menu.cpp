@@ -44,6 +44,7 @@
 #include <unordered_set>
 #include <vector>
 #include "phone_icons.h"
+#include "sky_textures.h"
 
 using namespace BNM;
 using namespace BNM::Structures::Unity;
@@ -472,11 +473,13 @@ static bool f_itemGun, f_spawnOnHand;
 static bool f_bullets, f_esp, f_draw, f_trail, f_noBounds, f_fullbright, f_horror, f_snow, f_pizza;
 static bool f_fps, f_clock, f_rightHand, f_notify = true;
 static bool f_infCotton, f_potionGun, f_itemRain, f_hearAll, f_bloom;
-static bool f_longMenu, f_pbUnder, f_pbBottom, f_pbSides = true;   // menu type Long Menu, and where the page buttons are
+static bool f_longMenu, f_pbUnder, f_pbBottom, f_pbSides = true, f_pbModTop;   // menu type Long Menu, and where the page buttons are
+static bool f_noOutline, f_pinBtn;
 static int g_roundLvl = 0, g_transLvl = 3;                           // Round Corners / Translucency sliders
-static const char *kVersion = "V2.0";
+static const char *kVersion = "V2.3";
 static bool f_joyFly, f_zeroFly, f_sizeChanger, f_punch, f_strafe, f_pixelMenu;
-static bool f_miniMap, f_revVel, f_noBody, f_phoneMenu, f_wideMenu, f_revolver;
+static bool f_miniMap, f_revVel, f_noBody, f_phoneMenu, f_wideMenu, f_revolver, f_stayLocked, f_spaceStars, f_galaxySky, f_flingGun;
+static int g_flingPower = 1;
 static std::string g_presetName;
 static bool f_blood1, f_blood2, f_pistol, f_shotgun, f_sniper, f_knife, f_nametags, f_trailEsp, f_ripple, f_targetLock, f_targetInfo, f_spectate, f_addFav;
 static int g_textCol = 0, g_gunFx = 0, g_lockRad = 2, g_sizeSel = 1, g_selEffect = 0, g_specView = 0;
@@ -599,19 +602,27 @@ static void NextPointer();
 static void ThemeBlue();
 static void ResetSize();
 static void ThemeBlack();
+static void ThemeDarkBlue();
 static void WideChanged();
 static void PresetLeo();
 static void PresetStupid();
 static void PresetModder();
+static void PresetMalachi();
+static void PresetSeralyth();
 static void PresetAdd();
 static void PresetDelete();
 static void PresetsEnsure();
 static void PresetSaveCurrent(const std::string &name);
 static void MenuRebuild();
+static void SkyPicked();
+static int LockTarget(Vector3 from);
 static void TextDefault();
 static void TextRed();
 static void TextWhite();
 static void TextBlack();
+static void TextPurple();
+static void TextPurpleWhite();
+static void TextBlueWhite();
 static void RefreshPlayersBtn();
 static void GiveSelectedEffect();
 static void SpawnAtSelected();
@@ -636,8 +647,6 @@ static void PotionOnTarget(Il2CppObject *obj, Il2CppObject *head, int fx);
 static void RewindToggled();
 static void GiveSelfPotion();
 static void PotionGunAim(Vector3 start, Vector3 dir);
-static void SpawnEggFrogling();
-static void SpawnEggHorror();
 static void Extra8Reset();
 static void ThemePurple();
 static void ThemeYellow();
@@ -665,6 +674,9 @@ static void HearAllToggled();
 static void SoundEnsure();
 static void ProjRefresh();
 static void ItemRainToggled();
+static bool *kSkyFlags[] = {&f_rainbowSky, &f_spaceStars, &f_galaxySky};
+static bool g_skyPrev[3];
+static void SkyPicked() { Radio(kSkyFlags, g_skyPrev, 3); }
 static void BloomToggled();
 static void BloomTick();
 static void FlashRestore();
@@ -686,6 +698,7 @@ static void DeleteAimedItem(Vector3 start, Vector3 dir);
 static void ThemeDark();
 static void HandPicked();
 static void MenuTypePicked();
+static void OutlineToggled();
 static void HandMenuPicked();
 static void OrbitToggled();
 static void ArmGrid81();
@@ -748,6 +761,9 @@ static Item g_items[] = {
     {SETTINGS, "Target Lock", TOGGLE, MAIN, &f_targetLock},
     {SETTINGS, "Lock Radius", SLIDER, MAIN, nullptr, nullptr, &g_lockRad, 6, LockRadName},
     {SETTINGS, "Gun Effect", SLIDER, MAIN, nullptr, nullptr, &g_gunFx, 3, GunFxName},
+    {SETTINGS, "Remove Outline", TOGGLE, MAIN, &f_noOutline, OutlineToggled},
+    {SETTINGS, "Pin Button", TOGGLE, MAIN, &f_pinBtn},
+    {SETTINGS, "Stay Locked", TOGGLE, MAIN, &f_stayLocked},
     {SETTINGS, "Floating Menu", TOGGLE, MAIN, &f_floatMenu},
     {SETTINGS, "Toggle Menu", TOGGLE, MAIN, &f_toggleMenu},
     {SETTINGS, "Colorblind Mode", TOGGLE, MAIN, &f_colorblind},
@@ -765,6 +781,7 @@ static Item g_items[] = {
     {THEMES, "Yellow", ACTION, MAIN, nullptr, ThemeYellow},
     {THEMES, "White", ACTION, MAIN, nullptr, ThemeWhite},
     {THEMES, "Black", ACTION, MAIN, nullptr, ThemeBlack},
+    {THEMES, "Dark Blue", ACTION, MAIN, nullptr, ThemeDarkBlue},
     {THEMES, "Translucent", ACTION, MAIN, nullptr, ThemeTranslucent},
     {THEMES, "Translucency", SLIDER, MAIN, nullptr, nullptr, &g_transLvl, 10, TransName},
 
@@ -784,6 +801,7 @@ static Item g_items[] = {
     {PAGEBTN, "Under Menu Name", TOGGLE, MAIN, &f_pbUnder, PageBtnPicked},
     {PAGEBTN, "Beside Menu (Default)", TOGGLE, MAIN, &f_pbSides, PageBtnPicked},
     {PAGEBTN, "Bottom Of Menu", TOGGLE, MAIN, &f_pbBottom, PageBtnPicked},
+    {PAGEBTN, "Mod Buttons", TOGGLE, MAIN, &f_pbModTop, PageBtnPicked},
 
     {MOVEMENT, "Exit Movement Mods", OPEN, MAIN},
     {MOVEMENT, "Platforms", TOGGLE, MAIN, &f_platforms},
@@ -828,22 +846,24 @@ static Item g_items[] = {
     {EXPERIMENTAL, "Freecam Speed", SLIDER, MAIN, nullptr, nullptr, &g_droneSpeed, 8, NoclipSpeedName},
 
     {SPAWNPRESETS, "Exit Spawn Presets", OPEN, SPAWNING},
-    {SPAWNPRESETS, "Mobspawnegg Frogling", ACTION, MAIN, nullptr, SpawnEggFrogling},
-    {SPAWNPRESETS, "Mobspawnegg HorrorEmpty", ACTION, MAIN, nullptr, SpawnEggHorror},
 
     {PRESETS, "Exit Presets", OPEN, SETTINGS},
     {PRESETS, "Leo's Menu", ACTION, MAIN, nullptr, PresetLeo},
     {PRESETS, "Stupid Menu", ACTION, MAIN, nullptr, PresetStupid},
     {PRESETS, "Modder 3x Menu", ACTION, MAIN, nullptr, PresetModder},
+    {PRESETS, "Malachi's Theme", ACTION, MAIN, nullptr, PresetMalachi},
+    {PRESETS, "Seralyth's Theme", ACTION, MAIN, nullptr, PresetSeralyth},
     {PRESETS, "Add Custom Preset", ACTION, MAIN, nullptr, PresetAdd},
     {PRESETS, "Delete Last Custom", ACTION, MAIN, nullptr, PresetDelete},
     {PRESETNAME, "Cancel", OPEN, PRESETS},
 
     {TEXTCOLOR, "Exit Text Colour", OPEN, SETTINGS},
-    {TEXTCOLOR, "Default Text", ACTION, MAIN, nullptr, TextDefault},
+    {TEXTCOLOR, "White Text", ACTION, MAIN, nullptr, TextDefault},
     {TEXTCOLOR, "Red Text", ACTION, MAIN, nullptr, TextRed},
-    {TEXTCOLOR, "White Text", ACTION, MAIN, nullptr, TextWhite},
-    {TEXTCOLOR, "Black Text", ACTION, MAIN, nullptr, TextBlack},
+    {TEXTCOLOR, "Black Text", ACTION, MAIN, nullptr, TextWhite},
+    {TEXTCOLOR, "Purple Text", ACTION, MAIN, nullptr, TextPurple},
+    {TEXTCOLOR, "Purple/White Text", ACTION, MAIN, nullptr, TextPurpleWhite},
+    {TEXTCOLOR, "Blue/White Text", ACTION, MAIN, nullptr, TextBlueWhite},
 
     {INFO, "Exit Info", OPEN, MAIN},
     {INFO, "Target Info", TOGGLE, MAIN, &f_targetInfo},
@@ -871,6 +891,8 @@ static Item g_items[] = {
     {OWNERPIN, "Cancel", OPEN, MAIN},
     {OWNER, "Exit Owner", OPEN, MAIN},
     {OWNER, "Phone Menu", TOGGLE, MAIN, &f_phoneMenu, MenuTypePicked},
+    {OWNER, "Fling Gun", TOGGLE, MAIN, &f_flingGun, GunPicked},
+    {OWNER, "Fling Power", SLIDER, MAIN, nullptr, nullptr, &g_flingPower, 3, FlingName},
     {SEARCH, "Exit Search", OPEN, MAIN},
 
     {SPAWNING, "Exit Spawning", OPEN, MAIN},
@@ -912,7 +934,9 @@ static Item g_items[] = {
     {VISUAL, "Trail ESP", TOGGLE, MAIN, &f_trailEsp},
     {VISUAL, "Ripple", TOGGLE, MAIN, &f_ripple},
     {VISUAL, "Box ESP", TOGGLE, MAIN, &f_boxEsp},
-    {VISUAL, "Rainbow Sky", TOGGLE, MAIN, &f_rainbowSky},
+    {VISUAL, "Rainbow Sky", TOGGLE, MAIN, &f_rainbowSky, SkyPicked},
+    {VISUAL, "Space Stars", TOGGLE, MAIN, &f_spaceStars, SkyPicked},
+    {VISUAL, "Galaxy Sky", TOGGLE, MAIN, &f_galaxySky, SkyPicked},
     {VISUAL, "Fullbright", TOGGLE, MAIN, &f_fullbright, AtmoPicked},
     {VISUAL, "Horror", TOGGLE, MAIN, &f_horror, AtmoPicked},
     {VISUAL, "Snow", TOGGLE, MAIN, &f_snow},
@@ -970,6 +994,7 @@ static const struct { const char *label, *tip; } kTips[] = {
     {"Under Menu Name", "Page buttons sit right under the menu name."},
     {"Beside Menu (Default)", "Page buttons sit on both sides of the menu."},
     {"Bottom Of Menu", "Page buttons sit at the bottom of the menu."},
+    {"Mod Buttons", "<- and -> page buttons sit at the top of the mod list, just under the title."},
     {"Long Menu", "Shows every mod of a category on one long page."},
     {"Dark Gray", "Dark gray menu."},
     {"Blue", "Blue menu."},
@@ -1052,8 +1077,7 @@ static const struct { const char *label, *tip; } kTips[] = {
     {"Mini Map", "A screen in the top right corner shows a camera high above you, following you."},
     {"Disable Body Collision", "Your body no longer collides with anything."},
     {"Solid Players", "Other players become solid: you can walk on top of their heads."},
-    {"Mobspawnegg Frogling", "Spawns a mobspawnegg_frogling in front of you."},
-    {"Mobspawnegg HorrorEmpty", "Spawns a mobspawnegg_horrorEmpty in front of you."},
+    {"Spawn Presets", "One button per mob egg; spawns it in front of you with its normal colors."},
     {"Platform Type", "Default: a platform under your hand while you hold the grip. Sticky: the same, but your hand is also in a solid ball. Follow Hand: the same, but the platform starts turned like your hand (and then stays that way)."},
     {"Self Trail", "A line follows behind you. Color comes from Draw Color."},
     {"Size Changer", "Changes your size to the one picked with Size. Your speed and jump follow your size."},
@@ -1065,6 +1089,7 @@ static const struct { const char *label, *tip; } kTips[] = {
     {"Ripple", "A water ripple spreads out where your hands or feet touch the ground."},
     {"Text Colour", "Pick the color of the menu text."},
     {"Black", "Black menu theme."},
+    {"Dark Blue", "Dark blue menu theme."},
     {"Target Lock", "Guns that affect other players (like the Potion Effect Gun and the Games weapons) lock onto the closest player inside the Lock Radius."},
     {"Lock Radius", "How far away Target Lock looks for a player."},
     {"Gun Effect", "The shape of the line your guns draw: straight, spiral or wave."},
@@ -1086,11 +1111,20 @@ static const struct { const char *label, *tip; } kTips[] = {
     {"Blood Shader Test 1", "Players bleed where the Games weapons hit them, with soft see-through blood and splats on the ground."},
     {"Blood Test 2", "Players bleed where the Games weapons hit them, with solid blood drops and splats on the ground."},
     {"Owner", "Needs a code."},
+    {"Remove Outline", "No outline around the menu board."},
+    {"Pin Button", "A pin on the left of the menu name: a shortcut for Floating Menu."},
+    {"Stay Locked", "A gun that affects other players (Potion Effect Gun, Fling Gun, the Games weapons) keeps the first player it finds while you hold the grip, instead of switching to whoever is closest."},
+    {"Space Stars", "The sky becomes a starfield."},
+    {"Galaxy Sky", "The sky becomes a colorful nebula."},
+    {"Fling Gun", "Right grip + trigger: flings the player you are pointing at (or the locked-on one with Target Lock) using the game's own knockback."},
+    {"Fling Power", "Light, Medium or Hard."},
     {"Phone Menu", "The menu becomes a phone: apps for Settings, Camera, Photos, Music, Maps and Notes. Exit Menu Type (red, at the bottom of Settings) turns it off."},
     {"Theme Presets", "Pick a ready-made look, or save your current look as a preset of your own."},
     {"Leo's Menu", "Blue theme, normal text, side page buttons, normal menu, blue gun pointer."},
     {"Stupid Menu", "Orange theme, normal text, side page buttons, normal menu, orange gun pointer."},
-    {"Modder 3x Menu", "Black theme, red text, side page buttons, normal menu, blue gun pointer."},
+    {"Modder 3x Menu", "Black theme, purple text, wide menu, no outline, mod-button page switcher, blue gun pointer."},
+    {"Malachi's Theme", "Dark blue theme, mod-button page switcher, yellow buttons that turn purple when on."},
+    {"Seralyth's Theme", "Purple theme, white text, default page switcher."},
     {"Add Custom Preset", "Saves how the menu looks now (theme, text color, page buttons, menu type, gun pointer, corners, width). You type a name."},
     {"Delete Last Custom", "Removes the newest custom preset."},
     {"Wide Menu", "Makes the menu a bit wider."},
@@ -1139,10 +1173,15 @@ static const Theme kThemes[] = {
     {"Yellow", Color(1.0f, 0.90f, 0.25f, 1), Color(0.85f, 0.70f, 0.05f, 1), Color(0.65f, 0.50f, 0.05f, 1), Color(0.25f, 0.18f, 0.0f, 1), Color(1.0f, 0.97f, 0.80f, 1)},
     {"White", Color(0.97f, 0.97f, 0.97f, 1), Color(0.80f, 0.80f, 0.85f, 1), Color(0.90f, 0.90f, 0.93f, 1), Color(0.25f, 0.25f, 0.30f, 1), Color(0.10f, 0.10f, 0.15f, 1)},
     {"Black", Color(0.03f, 0.03f, 0.03f, 1), Color(0.0f, 0.0f, 0.0f, 1), Color(0.10f, 0.10f, 0.11f, 1), Color(0.30f, 0.30f, 0.34f, 1), Color(0.92f, 0.92f, 0.95f, 1)},
+    {"Dark Blue", Color(0.08f, 0.14f, 0.32f, 1), Color(0.04f, 0.08f, 0.2f, 1), Color(0.06f, 0.1f, 0.22f, 1), Color(0.02f, 0.04f, 0.1f, 1), Color(0.75f, 0.82f, 1.0f, 1)},
 };
 static constexpr int kThemeCount = sizeof(kThemes) / sizeof(kThemes[0]);
 static int g_theme = 0;
 static const Theme &T() { return kThemes[g_theme]; }
+static bool g_btnOverride = false;
+static Color g_btnCol, g_btnOnCol;
+static Color BtnCol() { return g_btnOverride ? g_btnCol : kThemes[g_theme].button; }
+static Color BtnOnCol() { return g_btnOverride ? g_btnOnCol : kThemes[g_theme].buttonOn; }
 static bool Trans() { return f_pizza || g_theme == kTranslucent; }      // the panels are see-through
 
 
@@ -1152,7 +1191,7 @@ static bool Trans() { return f_pizza || g_theme == kTranslucent; }      // the p
 // on a "board" object: +x goes across, +y goes up, the player looks at it from -z.
 static constexpr int kRows = 8;                                   // buttons per page
 static constexpr int kMaxRows = 40;                               // Long Menu: the most buttons one page can show
-static constexpr int kNextHit = 1000, kSearchHit = 1500, kKeyHit = 2000;                             // RowAt result for the "next page" button
+static constexpr int kNextHit = 1000, kSearchHit = 1500, kPinHit = 1600, kKeyHit = 2000;                             // RowAt result for the "next page" button
 static float kBoardW = 0.30f, kBtnW = 0.27f;                       // Wide Menu changes these
 static const float kBoardH = 0.3825f, kBtnH = 0.0306f;
 static const float kTitleY = 0.235f, kSideW = 0.06f, kSideH = 0.344f;
@@ -1162,6 +1201,7 @@ static float RowY(int r) { return 0.13f - r * 0.04f; }
 static Ref g_menu, g_board, g_bg, g_outline, g_pointer, g_title, g_titleBar;
 static Ref g_rowCube[kMaxRows], g_rowLabel[kMaxRows], g_rowText[kMaxRows], g_knob[kMaxRows];
 static Ref g_menuCanvas[2];
+static Ref g_pinBtn, g_pinLbl;
 static Ref g_bgX[5], g_outX[5], g_prevLbl, g_nextLbl, g_verGo;   // extra parts of the rounded board, page button labels, version text
 static float g_boardH = kBoardH, g_boardCy = 0;                   // the board grows downward in the Long Menu
 static Ref g_prev, g_next, g_notifyGo, g_notifyBar, g_notifyText, g_tipText, g_leftPlatform, g_rightPlatform;
@@ -1173,7 +1213,7 @@ static bool g_pizzaHover = false, g_pizzaTrig = false, g_cursorOn = false;
 static bool MenuBusy() { return f_pizza ? g_pizzaHover : g_menuShown; }
 static Cat g_cat = MAIN;
 static int g_page = 0;
-static bool IsMenuFlag(const bool *f) { return f == &f_notify || f == &f_pizza || f == &f_textMenu || f == &f_wideMenu || f == &f_addFav || f == &f_phoneMenu || f == &f_floatMenu || f == &f_toggleMenu || f == &f_colorblind || f == &f_lbColor || f == &f_longMenu || f == &f_pixelMenu || f == &f_pbUnder || f == &f_pbBottom || f == &f_pbSides; }
+static bool IsMenuFlag(const bool *f) { return f == &f_notify || f == &f_pizza || f == &f_textMenu || f == &f_wideMenu || f == &f_noOutline || f == &f_pinBtn || f == &f_addFav || f == &f_phoneMenu || f == &f_floatMenu || f == &f_toggleMenu || f == &f_colorblind || f == &f_lbColor || f == &f_longMenu || f == &f_pixelMenu || f == &f_pbUnder || f == &f_pbBottom || f == &f_pbSides; }
 static std::deque<Item> g_soundItems;
 static std::deque<Item> g_playerItems;
 static std::deque<Item> g_presetItems;
@@ -1204,6 +1244,7 @@ static void BuildView() {
         if (g_cat == FAVOURITES) for (auto &it : g_items) if (it.cat != FAVOURITES && it.kind != OPEN && IsFav(it.label)) g_view.push_back(&it);
         if (g_cat == SEARCH) SearchFill();
         if (g_cat == PRESETS) { PresetsEnsure(); for (auto &it : g_presetItems) g_view.push_back(&it); }
+        if (g_cat == SPAWNPRESETS) { EggEnsure(); for (auto &it : g_eggItems) g_view.push_back(&it); }
     }
     if (g_page >= PageCount()) g_page = 0;
 }
@@ -1318,14 +1359,16 @@ static void LayoutRound(Ref &main, Ref *x, float cy, float w, float h, float z, 
     }
 }
 static void SetBG(Color c) { SetColor(g_bg.get(), c); for (auto &r : g_bgX) SetColor(r.get(), c); }
-static void SetOutline(Color c) { SetColor(g_outline.get(), c); for (auto &r : g_outX) SetColor(r.get(), c); }
+static void SetOutline(Color c) { Color c2 = f_noOutline ? Color(c.r, c.g, c.b, 0) : c; SetColor(g_outline.get(), c2); for (auto &r : g_outX) SetColor(r.get(), c2); }
+static void OutlineToggled() { g_dirty = true; }
 // Where the page buttons go: 0 beside the menu (the old place), 1 right under the menu name, 2 at the bottom of the menu.
-static int PageMode() { return f_pbUnder ? 1 : f_pbBottom ? 2 : 0; }
+static int PageMode() { return f_pbUnder ? 1 : f_pbBottom ? 2 : f_pbModTop ? 3 : 0; }
 struct PBox { float x, y, w, h; };                    // the "<" button; the ">" button is the mirror image
 static PBox PageBox() {
     switch (PageMode()) {
         case 1: return {-0.075f, 0.1795f, 0.12f, 0.032f};
         case 2: return {-0.075f, g_boardCy - g_boardH / 2 + 0.0132f, 0.12f, 0.022f};
+        case 3: return {-0.075f, kBoardH / 2 - 0.028f, 0.12f, 0.03f};        // the top of the mod list, just under the title
         default: return {-kSideX, g_boardCy, kSideW, g_boardH * 0.9f};
     }
 }
@@ -1340,7 +1383,7 @@ static void BuildRows(int from, int to) {
     if (!Alive(board) || !Alive(canvas)) return;
     Il2CppObject *bt = Tr(board), *ct = Tr(canvas);
     for (int r = from; r < to && r < kMaxRows; r++) {
-        g_rowCube[r].set(Part(bt, T().button, Vector3(0, RowY(r), -0.005f), Vector3(kBtnW, kBtnH, 0.009f)));
+        g_rowCube[r].set(Part(bt, BtnCol(), Vector3(0, RowY(r), -0.005f), Vector3(kBtnW, kBtnH, 0.009f)));
         g_knob[r].set(Part(bt, Color(1, 1, 1, 1), Vector3(0, RowY(r), -0.004f), Vector3(0.014f, kBtnH * 0.9f, 0.012f)));
         Show(g_knob[r], false);
         g_rowLabel[r].set(Label(ct, "", Vector3(0, RowY(r), 0), kBtnW, kBtnH, 19, &g_rowText[r]));
@@ -1365,10 +1408,10 @@ static void BuildMenu() {
 
     g_outline.set(Part(bt, T().title, Vector3(0, 0, 0.004f), Vector3(kBoardW + 0.008f, kBoardH + 0.008f, 0.004f)));
     g_bg.set(Part(bt, T().bgA, Vector3(0, 0, 0), Vector3(kBoardW, kBoardH, 0.01f)));
-    g_prev.set(Part(bt, T().button, Vector3(-kSideX, 0, 0), Vector3(kSideW, kSideH, 0.009f)));
+    g_prev.set(Part(bt, BtnCol(), Vector3(-kSideX, 0, 0), Vector3(kSideW, kSideH, 0.009f)));
     // The title sits on its own dark bar above the board (where ii's Disconnect button was)
-    g_titleBar.set(Part(bt, T().buttonOn, Vector3(0, kTitleY, -0.002f), Vector3(kBtnW, 0.045f, 0.009f)));
-    g_next.set(Part(bt, T().button, Vector3(kSideX, 0, 0), Vector3(kSideW, kSideH, 0.009f)));
+    g_titleBar.set(Part(bt, BtnOnCol(), Vector3(0, kTitleY, -0.002f), Vector3(kBtnW, 0.045f, 0.009f)));
+    g_next.set(Part(bt, BtnCol(), Vector3(kSideX, 0, 0), Vector3(kSideW, kSideH, 0.009f)));
 
     if (Il2CppObject *canvas = Canvas(bt, Vector3(0, 0, -0.0105f), kBoardW + 2 * kSideX, kBoardH + 0.1f)) {
         g_menuCanvas[0].set(canvas);
@@ -1376,8 +1419,11 @@ static void BuildMenu() {
         Label(ct, "Leo's Menu", Vector3(0, kTitleY, 0), kBtnW, 0.045f, 32, &g_title);
         g_rowsBuilt = 0;
         BuildRows(0, kRows);
+        g_pinLbl.set(Label(ct, "o-", Vector3(-kBtnW / 2 + 0.019f, kTitleY, -0.0005f), 0.03f, 0.022f, 15, nullptr));
         g_prevLbl.set(Label(ct, "<", Vector3(-kSideX, 0, -0.0005f), kSideW, 0.05f, 34, nullptr));
         g_nextLbl.set(Label(ct, ">", Vector3(kSideX, 0, -0.0005f), kSideW, 0.05f, 34, nullptr));
+        SetText(g_prevLbl, PageMode() == 3 ? "<-" : "<");
+        SetText(g_nextLbl, PageMode() == 3 ? "->" : ">");
         Label(ct, "", Vector3(0, -kBoardH / 2 - 0.02f, 0), kBoardW + 0.1f, 0.03f, 15, &g_tipText);
         char ver[64];
         snprintf(ver, sizeof ver, "Leo's Menu %s - build %s", kVersion, ym::api()->gameVersion);
@@ -1390,7 +1436,7 @@ static void BuildMenu() {
         PointerToHand();
     }
     // Notifications: a small bar right above the menu, like ii's notifications
-    g_notifyBar.set(Part(bt, T().buttonOn, Vector3(0, kTitleY + 0.075f, -0.002f), Vector3(kBtnW, 0.03f, 0.009f)));
+    g_notifyBar.set(Part(bt, BtnOnCol(), Vector3(0, kTitleY + 0.075f, -0.002f), Vector3(kBtnW, 0.03f, 0.009f)));
     if (Il2CppObject *n = Canvas(bt, Vector3(0, kTitleY + 0.075f, -0.0105f), kBtnW, 0.03f)) {
         g_notifyGo.set(n);
         g_menuCanvas[1].set(n);
@@ -1424,10 +1470,15 @@ static void Notify(const char *fmt, ...) {
 
 // In the Pizza Menu the panels are see-through (alpha a); in the hand menu colors stay solid.
 static Color TextCol(bool on) {                                  // Settings > Text Colour
-    if (g_textCol == 1) return Color(1.0f, 0.15f, 0.15f, 1);
-    if (g_textCol == 2) return Color(1, 1, 1, 1);
-    if (g_textCol == 3) return Color(0, 0, 0, 1);
-    return on ? Color(1, 1, 1, 1) : T().title;
+    (void)on;
+    switch (g_textCol) {
+    case 1: return Color(1.0f, 0.15f, 0.15f, 1);                  // Red
+    case 2: return Color(0, 0, 0, 1);                              // Black
+    case 3: return Color(0.72f, 0.3f, 1.0f, 1);                    // Purple
+    case 4: return Color(0.82f, 0.68f, 1.0f, 1);                   // Purple/White
+    case 5: return Color(0.75f, 0.85f, 1.0f, 1);                   // Blue/White
+    default: return Color(1, 1, 1, 1);                             // White
+    }
 }
 static Color Tint(Color c, float a) {
     if (f_pizza) return Color(c.r, c.g, c.b, a);
@@ -1499,7 +1550,7 @@ static void RenderPage() {
             Show(g_knob[r], false);
         }
         SetColor(g_rowCube[r].get(), r == g_flashRow ? Tint(Color(1, 0.9f, 0.6f, 1), 0.6f)
-                                     : on ? Tint(T().buttonOn, 0.55f) : Tint(T().button, 0.3f));
+                                     : on ? Tint(BtnOnCol(), 0.55f) : Tint(BtnCol(), 0.3f));
         if (Alive(g_rowText[r].get())) G.graphicSetColor[g_rowText[r].get()](TextCol(on));
     }
     ApplyLayout(shown);
@@ -1508,10 +1559,10 @@ static void RenderPage() {
     Show(g_next, pages);
     Show(g_prevLbl, pages);
     Show(g_nextLbl, pages);
-    SetColor(g_prev.get(), Tint(T().button, 0.35f));
-    SetColor(g_next.get(), Tint(T().button, 0.35f));
+    SetColor(g_prev.get(), Tint(BtnCol(), 0.35f));
+    SetColor(g_next.get(), Tint(BtnCol(), 0.35f));
     SetOutline(Tint(T().title, 0.4f));
-    SetColor(g_titleBar.get(), Tint(T().buttonOn, 0.45f));
+    SetColor(g_titleBar.get(), Tint(BtnOnCol(), 0.45f));
     SetColor(g_pointer.get(), T().bgB);
     if (Alive(g_title.get())) G.graphicSetColor[g_title.get()](TextCol(true));
     g_nextTitle = 0;                     // refresh the title now
@@ -1620,6 +1671,7 @@ static void Press(Item *it) {
 static float g_hitX = 0;
 static int RowAt(Vector3 p) {
     if (g_kbMode) { int k = KeyAt(p); if (k >= 0) return kKeyHit + k; }
+    if (fabsf(p.x - (-kBtnW / 2 + 0.019f)) < 0.019f && fabsf(p.y - kTitleY) < 0.022f) return kPinHit;
     if (g_cat != OWNERPIN && p.x > kBtnW / 2 - 0.04f && p.x < kBtnW / 2 && fabsf(p.y - kTitleY) < 0.022f) return kSearchHit;   // the magnifying glass
     PBox b = PageBox();
     if (PageCount() > 1 && fabsf(fabsf(p.x) - fabsf(b.x)) < b.w / 2 && fabsf(p.y - b.y) < b.h / 2)
@@ -1653,7 +1705,9 @@ static void ApplyHit(int hit, bool press, bool engaged) {
         if (!press || g_time < g_nextPress) return;
         g_nextPress = g_time + 0.2;
         Buzz();
-        if (hit == kSearchHit) OpenSearch(); else KeyPress(hit - kKeyHit);
+        if (hit == kSearchHit) OpenSearch();
+        else if (hit == kPinHit) { f_floatMenu = !f_floatMenu; g_floatPlaced = false; Notify(f_floatMenu ? "Floating Menu on" : "Floating Menu off"); }
+        else KeyPress(hit - kKeyHit);
         return;
     }
     if (hit != g_hover) {                                 // tooltip for the button under your finger
@@ -1885,7 +1939,7 @@ static Il2CppObject *NewHollowBall(Vector3 pos) {
                            {Vector3(0, 0.09f, 0), Vector3(0.13f, 0.05f, 0.23f)}, {Vector3(0, -0.09f, 0), Vector3(0.13f, 0.05f, 0.23f)},
                            {Vector3(0, 0, 0.09f), Vector3(0.13f, 0.13f, 0.05f)}, {Vector3(0, 0, -0.09f), Vector3(0.13f, 0.13f, 0.05f)}};
     for (auto &w : walls) {
-        Il2CppObject *c = Cube(T().button, true);
+        Il2CppObject *c = Cube(BtnCol(), true);
         if (!c) continue;
         if (layer >= 0 && G.goSetLayer.IsValid()) G.goSetLayer[c](layer);
         Il2CppObject *t = Tr(c);
@@ -1910,7 +1964,7 @@ static void PlatformFor(bool held, Ref &platform, Ref &hand) {
     if (!want || !h) { Kill(platform); Kill(ball); return; }
     if (Alive(platform.get())) return;                                // it stays where it was put until you let go
     Vector3 hp = G.trGetPosition[h]();
-    if (Il2CppObject *p = NewPlatform(hp - Vector3(0, 0.08f, 0), Vector3(0.28f, 0.02f, 0.28f), T().button)) {
+    if (Il2CppObject *p = NewPlatform(hp - Vector3(0, 0.08f, 0), Vector3(0.28f, 0.02f, 0.28f), BtnCol())) {
         if (g_platType == 2 && G.trGetRotation.IsValid()) G.trSetRotation[Tr(p)](G.trGetRotation[h]());    // Follow Hand: starts turned like the hand, then stays
         platform.set(p);
     }
@@ -1933,7 +1987,7 @@ static void StickyTick(const Buttons &in) {
         if (held[i] && !g_stickyPrev[i] && hands[i] && !MenuBusy()) {
             if (g_sticky.size() >= 10) { Kill(g_sticky.front()); g_sticky.erase(g_sticky.begin()); }
             Ref r;
-            if (Il2CppObject *p = NewPlatform(G.trGetPosition[hands[i]](), Vector3(0.42f, 0.42f, 0.42f), T().button, true)) { r.set(p); g_sticky.push_back(r); }
+            if (Il2CppObject *p = NewPlatform(G.trGetPosition[hands[i]](), Vector3(0.42f, 0.42f, 0.42f), BtnCol(), true)) { r.set(p); g_sticky.push_back(r); }
         }
         g_stickyPrev[i] = held[i];
     }
@@ -2087,7 +2141,7 @@ static void GunLineDraw(Il2CppObject *line, Vector3 start, Vector3 end, Vector3 
     G.lrSetPosition[line](N, end);
 }
 static void TeleportGunTick(const Buttons &in) {
-    bool aiming = (f_tpGun || f_itemGun || f_delGun || f_grid9Gun || f_cubeGun || f_potionGun) && in.rgrip;
+    bool aiming = (f_tpGun || f_itemGun || f_delGun || f_grid9Gun || f_cubeGun || f_potionGun || f_flingGun) && in.rgrip;
     if (!aiming) {
         Show(g_gunLineGo, false);
         Show(g_gunBall, false);
@@ -2129,6 +2183,8 @@ static void TeleportGunTick(const Buttons &in) {
     }
     if (in.rtrig && !g_gunTrigger && f_delGun) {
         DeleteAimedItem(start, dir);                      // Delete Item Gun: needs no hit point
+    } else if (in.rtrig && !g_gunTrigger && f_flingGun) {
+        FlingGunAim(start, dir);                          // Fling Gun: needs no hit point
     } else if (in.rtrig && !g_gunTrigger && f_potionGun) {
         PotionGunAim(start, dir);                         // Potion Effect Gun: needs no hit point
     } else if (in.rtrig && !g_gunTrigger && found) {
@@ -2472,9 +2528,9 @@ static void FlyPicked() { Radio(kFlyFlags, g_flyPrev, 5); }
 static bool *kHandFlags[] = {&f_ironMan, &f_spider};                   // both use the triggers
 static bool g_handPrev[2];
 static void HandPicked() { Radio(kHandFlags, g_handPrev, 2); }
-static bool *kGunFlags[] = {&f_tpGun, &f_itemGun, &f_delGun, &f_grid9Gun, &f_cubeGun, &f_potionGun};   // the guns all use right grip + trigger
-static bool g_gunPrev[6];
-static void GunPicked() { Radio(kGunFlags, g_gunPrev, 6); }
+static bool *kGunFlags[] = {&f_tpGun, &f_itemGun, &f_delGun, &f_grid9Gun, &f_cubeGun, &f_potionGun, &f_flingGun};   // the guns all use right grip + trigger
+static bool g_gunPrev[7];
+static void GunPicked() { Radio(kGunFlags, g_gunPrev, 7); }
 
 static void AllOff() {
     for (auto &it : g_items) if (it.kind == TOGGLE && !IsMenuFlag(it.flag)) *it.flag = false;   // ticks undo each mod
@@ -4413,10 +4469,14 @@ static size_t ArrLen(uint8_t *a) { return a ? *(uintptr_t *)(a + 0x18) : 0; }
 static Il2CppObject *ArrAt(uint8_t *a, size_t i) { return ((Il2CppObject **)(a + 0x20))[i]; }
 
 static void ThemeBlack() { g_theme = 8; Notify("Theme: Black"); }
-static void TextDefault() { g_textCol = 0; g_dirty = true; Notify("Text: default"); }
+static void ThemeDarkBlue() { g_theme = 9; Notify("Theme: Dark Blue"); }
+static void TextDefault() { g_textCol = 0; g_dirty = true; Notify("Text: white"); }
 static void TextRed() { g_textCol = 1; g_dirty = true; Notify("Text: red"); }
-static void TextWhite() { g_textCol = 2; g_dirty = true; Notify("Text: white"); }
-static void TextBlack() { g_textCol = 3; g_dirty = true; Notify("Text: black"); }
+static void TextWhite() { g_textCol = 2; g_dirty = true; Notify("Text: black"); }
+static void TextBlack() { g_textCol = 2; g_dirty = true; Notify("Text: black"); }
+static void TextPurple() { g_textCol = 3; g_dirty = true; Notify("Text: purple"); }
+static void TextPurpleWhite() { g_textCol = 4; g_dirty = true; Notify("Text: purple/white"); }
+static void TextBlueWhite() { g_textCol = 5; g_dirty = true; Notify("Text: blue/white"); }
 static void ThemeDark() { g_theme = 3; Notify("Theme: Dark Gray"); }
 static void ThemePurple() { g_theme = 5; Notify("Theme: Purple"); }
 static void ThemeYellow() { g_theme = 6; Notify("Theme: Yellow"); }
@@ -4688,7 +4748,7 @@ static size_t g_shIdx = 0, g_shN = 0;
 static double g_nextShScan = 0;
 static BNM::Structures::Mono::String *MS(const char *x) { return (BNM::Structures::Mono::String *)CreateMonoString(x); }
 // Horror: terrain is not a Renderer, so it keeps its own material. It is given a dark one (and the old one comes back afterwards).
-struct TerrSave { Ref terr, oldMat, newMat; };
+struct TerrSave { Ref terr, oldMat, newMat; int oldType = 0; };
 static std::vector<TerrSave> g_terr;
 static double g_terrNext = 0;
 static void TerrainShade(bool on) {
@@ -4696,13 +4756,22 @@ static void TerrainShade(bool on) {
     if (!tc.IsValid()) return;
     Method<Il2CppObject *> getMat;
     Method<void> setMat;
+    Method<int> getType;
+    Method<void> setType;
     getMat = tc.GetMethod("get_materialTemplate", 0);
     setMat = tc.GetMethod("set_materialTemplate", 1);
+    getType = tc.GetMethod("get_materialType", 0);
+    setType = tc.GetMethod("set_materialType", 1);
     if (!getMat.IsValid() || !setMat.IsValid()) return;
     if (!on) {
         for (auto &t : g_terr) {
             Il2CppObject *o = t.terr.get();
-            if (Alive(o)) { try { setMat[o](t.oldMat.get()); } catch (...) {} }
+            if (Alive(o)) {
+                try {
+                    setMat[o](t.oldMat.get());
+                    if (setType.IsValid()) setType[o](t.oldType);
+                } catch (...) {}
+            }
             Kill(t.newMat);
             t.terr.clear();
             t.oldMat.clear();
@@ -4729,7 +4798,9 @@ static void TerrainShade(bool on) {
             ts.terr.set(t);
             if (old) ts.oldMat.set(old);
             ts.newMat.set(m);
+            ts.oldType = getType.IsValid() ? getType[t]() : 0;
             g_terr.push_back(ts);
+            if (setType.IsValid()) setType[t](2);        // 2 = Custom: only then does materialTemplate actually apply
             setMat[t](m);
         } catch (...) {}
     }
@@ -4771,7 +4842,7 @@ static void ShaderProcess(Il2CppObject *rend, int mode) {
     if (mode == 1) {
         Color c = hb ? sm.oldBase : hc ? sm.oldColor : Color(1, 1, 1, 1);
         G.matSetShader[m](G.unlitShader.get());
-        G.matSetColorN[m](MS("_BaseColor"), Color(c.r * 0.6f, c.g * 0.6f, c.b * 0.6f, 1));   // lit up, but not blinding
+        G.matSetColorN[m](MS("_BaseColor"), Color(c.r * 1.1f, c.g * 1.1f, c.b * 1.1f, 1));   // 10% brighter than normal, not blinding white
         sm.swapped = true;
     } else {
         if (hb) G.matSetColorN[m](MS("_BaseColor"), Color(sm.oldBase.r * 0.16f, sm.oldBase.g * 0.11f, sm.oldBase.b * 0.11f, sm.oldBase.a));
@@ -5489,6 +5560,9 @@ static void BloomTick() {
 
 static void ExtraRoomReset() {
     g_fall.clear();
+    SkyboxRestore();
+    g_stayTarget = -1;
+    g_stayGripPrev = false;
     g_ptw.clear();                                // the old room's items are gone
     g_cotSaved.clear();
     g_bloomGo.clear();
@@ -5527,11 +5601,12 @@ static void MenuTypePicked() {
     g_pzSel = 0;
     g_pzNext = 0;
 }
-static bool *kPbFlags[] = {&f_pbUnder, &f_pbSides, &f_pbBottom};
-static bool g_pbPrev[3] = {false, true, false};
+static bool *kPbFlags[] = {&f_pbUnder, &f_pbSides, &f_pbBottom, &f_pbModTop};
+static bool g_pbPrev[4] = {false, true, false, false};
 static void PageBtnPicked() {
-    Radio(kPbFlags, g_pbPrev, 3);
-    if (!f_pbUnder && !f_pbSides && !f_pbBottom) { f_pbSides = true; g_pbPrev[1] = true; }   // nothing picked = the default
+    Radio(kPbFlags, g_pbPrev, 4);
+    if (!f_pbUnder && !f_pbSides && !f_pbBottom && !f_pbModTop) { f_pbSides = true; g_pbPrev[1] = true; }   // nothing picked = the default
+    g_dirty = true;
     g_dirty = true;
 }
 static void HandMenuPicked() {
@@ -6513,7 +6588,7 @@ static void PotionGunAim(Vector3 start, Vector3 dir) {
     EspRefresh();
     int best = -1;
     float bestT = 1e30f;
-    if (f_targetLock) best = LockTarget(start);                // Target Lock: the closest player in the radius
+    if (f_targetLock) best = LockTargetPersist(start, true);      // Target Lock: the closest player in the radius (or the kept one)
     else
         for (int i = 0; i < 16; i++) {
             Il2CppObject *head = g_rig[i].head.get();
@@ -6566,18 +6641,129 @@ static void PunchTick() {
 }
 
 // ---- Spawn Presets: mob spawn eggs ----
-static void SpawnEgg(const char *key) {
+// ---- Spawn Presets: mob eggs. The real item is "mobSpawnEgg" with 3 string parameters (the mob's name, then its
+// primary and secondary colors) sent through the same item message as SendItem, extended to carry those parameters.
+static bool SendItemP(const char *key, Vector3 pos, Quaternion rot, Vector3 vel, const char *const *params, int nParams, char *idOut = nullptr) {
+    auto *mi = G.rpcCreateItem;
+    Il2CppObject *nm = G.netLocal.IsValid() ? G.netLocal() : nullptr;
+    if (!mi || !nm || !G.pvRpc.IsValid() || !G.arrayNew || !G.valueBox || !G.tPhotonView) return false;
+    Il2CppObject *go = G.compGameObject[nm]();
+    Il2CppObject *pv = go ? G.goGetComponent[go]((Il2CppObject *)G.tPhotonView) : nullptr;
+    if (!pv) return false;
+    int count = mi->parameters_count;
+    if (count > 0 && TypeName(mi->parameters[count - 1]) == "Photon.Pun.PhotonMessageInfo") count--;
+    auto *args = (Il2CppObject *)G.arrayNew(G.objectClass, count);
+    if (!args) return false;
+    char id[8];
+    static const char kChars[] = "abcdefghijklmnopqrstuvwxyz0123456789";
+    for (int i = 0; i < 4; i++) id[i] = kChars[(int)(Rand01() * 35.99f)];
+    id[4] = 0;
+    if (idOut) memcpy(idOut, id, 5);
+    int strings = 0, vectors = 0;
+    for (int i = 0; i < count; i++) {
+        std::string tn = TypeName(mi->parameters[i]);
+        Class pc(mi->parameters[i]);
+        auto *k = pc.IsValid() ? pc.GetClass() : nullptr;
+        void *v = nullptr;
+        if (tn == "System.String") {
+            if (strings == 0) v = CreateMonoString(id);
+            else if (strings == 1) v = CreateMonoString(key);
+            strings++;
+        } else if (tn == "UnityEngine.Vector3") {
+            Vector3 vec = vectors == 0 ? pos : vectors == 1 ? vel : Vector3(0, 0, 0);
+            vectors++;
+            v = G.valueBox(k, &vec);
+        } else if (tn == "UnityEngine.Quaternion") {
+            v = G.valueBox(k, &rot);
+        } else if (tn == "System.String[]") {
+            int n = params && nParams > 0 ? nParams : 0;
+            Il2CppObject *arr = (Il2CppObject *)G.arrayNew(G.stringClass, (size_t)n);
+            for (int j = 0; j < n; j++) Put(arr, (size_t)j, CreateMonoString(params[j] ? params[j] : ""));
+            v = arr;
+        } else if (k && k->byval_arg.valuetype) {
+            uint8_t raw[64] = {};
+            raw[0] = 1;
+            auto *boxAs = k->enumtype && k->element_class ? k->element_class : k;
+            v = G.valueBox(boxAs, raw);
+        }
+        Put(args, i, v);
+    }
+    try { G.pvRpc[pv](CreateMonoString("RpcCreateItem"), 0, args); } catch (BNM::IL2CPP::Il2CppExceptionWrapper &w) {
+        auto *ex = w.ex;
+        auto *msg = ex ? (BNM::Structures::Mono::String *)ex->message : nullptr;
+        ym::log("leos-menu: egg spawn error: %s", msg ? msg->str().c_str() : "?");
+        return false;
+    }
+    return true;
+}
+struct EggColor { const char *mob, *primary, *secondary; };
+static const EggColor kEggColors[] = {
+        {"alienEye", "blue_turquoise", "guac"},
+        {"alienHopper", "purple", "guac"},
+        {"armadillo", "maroon_dark", "mocha_light"},
+        {"bitingBat", "brown_dark", "red_dark"},
+        {"crab", "red", "yellow_light"},
+        {"eggSack", "yellow_light", "purple"},
+        {"frogling", "green_light", "yellow_light"},
+        {"grazingHog", "blue_turquoise", "olive_light"},
+        {"grazingSheep", "white", "blue_light"},
+        {"grazingYak", "brown_dark", "brown"},
+        {"hermitCrab", "red", "blue_dark"},
+        {"horrorBear", "mocha", "blue_dark"},
+        {"horrorChild", "blue_dark", "black"},
+        {"horrorChimp", "yellow", "red"},
+        {"horrorEmpty", "black", "black"},
+        {"horrorFather", "black", "red"},
+        {"horrorFisherman", "green_dark", "pink"},
+        {"horrorFrankenstein", "gray_dark", "blue_turquoise"},
+        {"horrorGhost_boy", "gray_cool_light", "blue_light"},
+        {"horrorGhost_girl", "gray_cool_light", "pink"},
+        {"horrorGhost_pet", "gray_cool_light", "green_light"},
+        {"horrorGrandma", "maroon", "orange_light"},
+        {"horrorMother", "blue_light", "yellow_light"},
+        {"horrorYeepingAngel", "purple_dark", "blue_dark"},
+        {"insectExploder", "red", "white"},
+        {"insectHatchling", "purple", "purple_dark"},
+        {"insectQueen", "purple_dark", "purple"},
+        {"insectSoldier", "purple", "periwinkle"},
+        {"insectTank", "purple_dark", "gray"},
+        {"rat", "red_dark", "brown"},
+        {"ratKing", "red_dark", "yellow_light"},
+        {"scorpion", "purple_dark", "yellow_light"},
+        {"shark", "blue_dark", "gray"},
+        {"spittingFrog", "green_light", "green"},
+        {"spittingLizard", "red", "yellow"},
+        {"spittingSnail", "blue_dark", "cyan"},
+        {"wasp", "brown_dark", "yellow"},
+        {"wolf", "blue_dark", "red"},
+        {"yeti", "blue_light", "blue_dark"}
+};
+static bool EggColorsFor(const char *mob, const char **primary, const char **secondary) {
+    for (auto &e : kEggColors)
+        if (!strcmp(e.mob, mob)) { *primary = e.primary; *secondary = e.secondary; return true; }
+    return false;
+}
+static std::deque<Item> g_eggItems;
+static bool g_eggInit = false;
+static void SpawnEgg(const char *mob) {
     Il2CppObject *head = g_head.get();
     if (!head) return;
+    const char *primary = "white", *secondary = "white";
+    EggColorsFor(mob, &primary, &secondary);
+    const char *params[3] = {mob, primary, secondary};
     Vector3 r, f = HeadFlat(head, r);
-    PendingItem p{G.trGetPosition[head]() + f * 1.0f + Vector3(0, -0.2f, 0), Vector3(0, 0, 0)};
-    snprintf(p.key, sizeof p.key, "%s", key);
-    g_itemQueue.push_back(p);
-    ym::log("leos-menu: spawn egg %s", key);
-    Notify("Spawning %s", key);
+    Vector3 pos = G.trGetPosition[head]() + f * 1.0f + Vector3(0, -0.2f, 0);
+    bool ok = SendItemP("mobSpawnEgg", pos, Quaternion(0, 0, 0, 1), Vector3(0, 0.4f, 0), params, 3);
+    ym::log("leos-menu: egg spawn %s ok=%d", mob, ok ? 1 : 0);
+    Notify(ok ? "Spawning %s" : "Couldn't spawn %s (see log)", mob);
 }
-static void SpawnEggFrogling() { SpawnEgg("mobspawnegg_frogling"); }
-static void SpawnEggHorror() { SpawnEgg("mobspawnegg_horrorEmpty"); }
+static void EggEnsure() {
+    if (g_eggInit) return;
+    g_eggInit = true;
+    for (auto &e : kEggColors) g_eggItems.push_back(Item{SPAWNPRESETS, e.mob, ACTION, MAIN, nullptr, nullptr, nullptr, 0, nullptr, 0});
+    for (size_t i = 0; i < g_eggItems.size(); i++) g_eggItems[i].arg = (int)i;
+    for (auto &it : g_eggItems) it.fn = []() { if (g_pressArg >= 0 && g_pressArg < (int)(sizeof kEggColors / sizeof kEggColors[0])) SpawnEgg(kEggColors[g_pressArg].mob); };
+}
 
 // ============================================================================================
 // ---- Update 10 ------------------------------------------------------------------------------
@@ -6647,7 +6833,7 @@ static void KeyBuild(int mode) {
     Il2CppObject *bt = Tr(board), *ct = Tr(canvas);
     for (auto &k : g_keyDef[mode]) {
         Ref c, l;
-        c.set(Part(bt, T().button, Vector3(k.x, k.y, -0.005f), Vector3(k.w, k.h, 0.009f)));
+        c.set(Part(bt, BtnCol(), Vector3(k.x, k.y, -0.005f), Vector3(k.w, k.h, 0.009f)));
         l.set(Label(ct, k.text.c_str(), Vector3(k.x, k.y, 0), k.w, k.h, k.text.size() > 1 ? 13 : 18, nullptr));
         g_keyCube[mode].push_back(c);
         g_keyLbl[mode].push_back(l);
@@ -6665,15 +6851,17 @@ static void SearchUi() {
     if (!Alive(board)) return;
     if (!Alive(g_srchParts[0].get())) {                  // the magnifying glass: a ring and a handle
         Il2CppObject *bt = Tr(board);
-        Il2CppObject *ring = Prim(2, T().title, false), *hole = Prim(2, T().buttonOn, false), *handle = Prim(3, T().title, false);
+        Il2CppObject *ring = Prim(2, T().title, false), *hole = Prim(2, BtnOnCol(), false), *handle = Prim(3, T().title, false);
         float cx = kBtnW / 2 - 0.023f, cy = kTitleY + 0.004f;
         Quaternion qx(0.70710678f, 0, 0, 0.70710678f);
         if (ring) { Il2CppObject *t = Tr(ring); G.trSetParent[t](bt, false); G.trSetLocalPosition[t](Vector3(cx, cy, -0.0075f)); G.trSetLocalRotation[t](qx); G.trSetLocalScale[t](Vector3(0.026f, 0.002f, 0.026f)); g_srchParts[0].set(ring); }
         if (hole) { Il2CppObject *t = Tr(hole); G.trSetParent[t](bt, false); G.trSetLocalPosition[t](Vector3(cx, cy, -0.0095f)); G.trSetLocalRotation[t](qx); G.trSetLocalScale[t](Vector3(0.017f, 0.002f, 0.017f)); g_srchParts[1].set(hole); }
         if (handle) { Il2CppObject *t = Tr(handle); G.trSetParent[t](bt, false); G.trSetLocalPosition[t](Vector3(cx + 0.0125f, cy - 0.0125f, -0.0075f)); G.trSetLocalRotation[t](Quaternion(0, 0, -0.38268343f, 0.92387953f)); G.trSetLocalScale[t](Vector3(0.016f, 0.004f, 0.004f)); g_srchParts[2].set(handle); }
     }
+    Show(g_pinLbl, true);
+    if (Alive(g_pinLbl.get())) G.graphicSetColor[g_pinLbl.get()](f_floatMenu ? BtnOnCol() : Color(1, 1, 1, 0.55f));
     SetColor(g_srchParts[0].get(), T().title);
-    SetColor(g_srchParts[1].get(), T().buttonOn);
+    SetColor(g_srchParts[1].get(), BtnOnCol());
     SetColor(g_srchParts[2].get(), T().title);
 }
 static int KeyAt(Vector3 p) {
@@ -6801,20 +6989,20 @@ static void FxSelfStart(int fx) {
 }
 static void GiveSelfPotionImpl() {
     Il2CppObject *p = g_player.get();
-    if (!p) return;
-    if (PotionApply(p, g_potionSelf, 30.0f)) Notify("%s for 30 seconds", kPotionN[g_potionSelf]);
-    else FxSelfStart(g_potionSelf);
+    if (p) PotionApply(p, g_potionSelf, 30.0f);                 // try the game's own effect too, but never rely on it alone
+    FxSelfStart(g_potionSelf);
 }
 static void PotionOnTarget(Il2CppObject *obj, Il2CppObject *head, int fx) {
-    if (PotionApply(obj, fx, 30.0f)) { Notify("%s given", kPotionN[fx]); return; }
-    if (fx == 4 || fx == 5 || fx == 2) {                 // these we can show: small, big, love (only on your screen)
-        for (auto &t : g_tfx) if (t.obj.get() == obj && t.fx == fx) { t.until = g_time + 30.0; return; }
-        if (g_tfx.size() >= 8) return;
-        TargetFx t;
-        t.obj.set(obj); t.head.set(head); t.fx = fx; t.until = g_time + 30.0;
-        g_tfx.push_back(t);
-        Notify("%s on them (only you see it)", kPotionN[fx]);
-    } else Notify("No %s effect found for others (see log)", kPotionN[fx]);
+    bool real = PotionApply(obj, fx, 30.0f);                    // try the game's own effect too, but never rely on it alone
+    if (fx == 4 || fx == 5 || fx == 2) {                 // these we can show ourselves: small, big, love (only on your screen)
+        for (auto &t : g_tfx) if (t.obj.get() == obj && t.fx == fx) { t.until = g_time + 30.0; Notify("%s on them", kPotionN[fx]); return; }
+        if (g_tfx.size() < 8) {
+            TargetFx t;
+            t.obj.set(obj); t.head.set(head); t.fx = fx; t.until = g_time + 30.0;
+            g_tfx.push_back(t);
+        }
+        Notify("%s on them%s", kPotionN[fx], real ? "" : " (only you see it)");
+    } else Notify(real ? "%s sent" : "%s: no way to show this on another player from here", kPotionN[fx]);
 }
 static void FxTick(float dt) {
     (void)dt;
@@ -6863,16 +7051,15 @@ static void FxTick(float dt) {
                 G.trSetPosition[Tr(g_fxOrb[i].get())](hp + Vector3(cosf(a) * 0.45f, 0.15f + 0.08f * sinf(a * 2.0f), sinf(a) * 0.45f));
             }
         }
+        static Ref glow[2];
         if (g_fxUntil[1] > g_time) {                                                // visibility: your hands glow
-            static Ref glow[2];
             Il2CppObject *hands[2] = {g_leftHand.get(), g_rightHand.get()};
             for (int i = 0; i < 2; i++) {
                 if (!Alive(glow[i].get()))
                     if (Il2CppObject *o = Prim(0, Color(1.0f, 0.95f, 0.4f, 1), false)) { G.trSetLocalScale[Tr(o)](Vector3(0.16f, 0.16f, 0.16f)); glow[i].set(o); }
                 if (Alive(glow[i].get()) && hands[i]) G.trSetPosition[Tr(glow[i].get())](G.trGetPosition[hands[i]]());
             }
-            g_fxUntil[1] = g_fxUntil[1];
-        }
+        } else for (auto &g : glow) Kill(g);                                        // the glow balls go away once visibility ends
     }
     // effects we show on other players
     for (size_t i = 0; i < g_tfx.size();) {
@@ -6970,7 +7157,7 @@ static int LockTarget(Vector3 from) {                    // Target Lock: the clo
     }
     return best;
 }
-static bool AffectsOthersActive() { return f_potionGun || f_pistol || f_shotgun || f_sniper || f_knife; }
+static bool AffectsOthersActive() { return f_potionGun || f_flingGun || f_pistol || f_shotgun || f_sniper || f_knife || f_revolver; }
 static Ref g_tbGo, g_tbLine;
 static void PlayerInfoTick() {
     static bool had = false;
@@ -7192,7 +7379,7 @@ static int g_wBuilt = -1;
 static void WeaponKill() { for (auto &r : g_wParts) Kill(r); g_wParts.clear(); Kill(g_wRoot); g_wBuilt = -1; }
 static void WeaponBuild(int kind) {
     Il2CppObject *hand = g_rightHand.get();
-    if (!Alive(hand)) return;
+    if (!Alive(hand)) { WeaponKill(); return; }
     WeaponKill();
     Il2CppObject *root = Class("UnityEngine", "GameObject").CreateNewObjectParameters(CreateMonoString("LeoWeapon"));
     if (!root) return;
@@ -7286,19 +7473,21 @@ static void ShotTick(float dt) {
 static bool g_wTrig = false;
 static double g_wNext = 0;
 static Vector3 g_knifePrev;
+static bool g_knifeInit = false;
 static void WeaponTick(const Buttons &in, float dt) {
     ShotTick(dt);
     int kind = f_pistol ? 0 : f_shotgun ? 1 : f_sniper ? 2 : f_knife ? 3 : f_revolver ? 4 : -1;
     Il2CppObject *hand = g_rightHand.get();
-    if (kind < 0 || !Alive(hand)) { if (g_wBuilt >= 0) WeaponKill(); g_wTrig = in.rtrig; return; }
-    if (g_wBuilt != kind || g_wParts.empty() || !Alive(g_wParts[0].get())) WeaponBuild(kind);
+    if (kind < 0 || !Alive(hand)) { if (g_wBuilt >= 0) WeaponKill(); g_wTrig = in.rtrig; g_knifeInit = false; return; }
+    if (g_wBuilt != kind || g_wParts.empty() || !Alive(g_wParts[0].get()) || !Alive(g_wRoot.get())) WeaponBuild(kind);
     RigRefresh();
     Vector3 hp = G.trGetPosition[hand](), f = G.trGetForward[hand]();
-    if (f_targetLock) {                                   // Target Lock: aim at the closest player
-        int s = LockTarget(hp);
+    if (f_targetLock) {                                   // Target Lock: aim at the closest player (or the kept one with Stay Locked)
+        int s = LockTargetPersist(hp, in.rgrip);
         if (s >= 0) { Vector3 d = G.trGetPosition[g_rig[s].head.get()]() - Vector3(0, 0.45f, 0) - hp; float l = sqrtf(Len2(d)); if (l > 0.1f) f = d * (1.0f / l); }
     }
     if (kind == 3) {                                      // knife: a fast swing into a player
+        if (!g_knifeInit) { g_knifePrev = hp; g_knifeInit = true; }
         Vector3 hv = (hp - g_knifePrev) * (1.0f / (dt > 0.001f ? dt : 0.001f));
         g_knifePrev = hp;
         Vector3 tip = hp + G.trGetUp[hand]() * 0.3f;
@@ -7316,7 +7505,8 @@ static void WeaponTick(const Buttons &in, float dt) {
         if (in.a && !aPrev && !MenuBusy() && g_time >= g_spinUntil) g_spinUntil = g_time + 0.9;
         aPrev = in.a;
     }
-    if (Il2CppObject *rt = g_wRoot.get()) {
+    if (Alive(g_wRoot.get())) {
+        Il2CppObject *rt = g_wRoot.get();
         float ang = 0;
         if (kind == 4 && g_time < g_spinUntil) ang = 4.0f * 3.14159265f * (1.0f - (float)(g_spinUntil - g_time) / 0.9f);
         G.trSetLocalRotation[Tr(rt)](Quaternion(sinf(ang / 2), 0, 0, cosf(ang / 2)));
@@ -7356,6 +7546,11 @@ static void Extra10Reset() {
     for (int i = 0; i < 16; i++) { g_etGo[i].clear(); g_etLine[i].clear(); g_etPts[i].clear(); }
     g_ripples.clear(); g_drops.clear(); g_splats.clear(); g_bullets9.clear(); g_wParts.clear(); g_wBuilt = -1;
     g_tfx.clear();
+    for (auto &r : g_wParts) Kill(r);
+    Kill(g_wRoot);
+    g_wBuilt = -1;
+    g_wTrig = false;
+    g_knifeInit = false;
     for (auto &r : g_fxOrb) r.clear();
     g_fxBlind.clear();
     g_fxJumpBase = 0;
@@ -7456,7 +7651,7 @@ static void SetQuadTex(Il2CppObject *q, Il2CppObject *tex) {
 
 // ---- widgets ----
 struct PW {
-    Ref cube, lbl, txt, quad;
+    Ref cube, lbl, txt, quad, quad2;
     std::string text, lastText;
     Color col = Color(0, 0, 0, 0), tcol = Color(1, 1, 1, 1), lastCol = Color(-1, -1, -1, -1), lastTcol = Color(-1, -1, -1, -1);
     float x = 0, y = 0, w = 0, h = 0;
@@ -7500,14 +7695,24 @@ static void PWFlush() {
             if (!Alive(p.quad.get())) {
                 if (Il2CppObject *q = Prim(5, Color(1, 1, 1, 1), false)) { MatTransparent(q, true); G.trSetParent[Tr(q)](bt, false); p.quad.set(q); p.lastTex = nullptr; }
             }
+            if (!Alive(p.quad2.get())) {                  // a Quad shows only from one side; a second one facing the other way means it is visible either way the first one turned out
+                if (Il2CppObject *q2 = Prim(5, Color(1, 1, 1, 1), false)) { MatTransparent(q2, true); G.trSetParent[Tr(q2)](bt, false); G.trSetLocalRotation[Tr(q2)](Quaternion(0, 1, 0, 0)); p.quad2.set(q2); }
+            }
+            Vector3 pos(p.x, p.y, kPZ - 0.0022f);          // in front of the cube behind it, behind the text
             if (Il2CppObject *q = p.quad.get()) {
                 Il2CppObject *t = Tr(q);
-                G.trSetLocalPosition[t](Vector3(p.x, p.y, kPZ - 0.0022f));          // in front of the cube behind it, behind the text
+                G.trSetLocalPosition[t](pos);
                 G.trSetLocalScale[t](Vector3(p.w, p.h, 1));
-                if (p.tex != p.lastTex) { SetQuadTex(q, p.tex); p.lastTex = p.tex; }
                 Show(p.quad, true);
             }
-        } else if (p.quad.get()) Show(p.quad, false);
+            if (Il2CppObject *q2 = p.quad2.get()) {
+                Il2CppObject *t = Tr(q2);
+                G.trSetLocalPosition[t](pos);
+                G.trSetLocalScale[t](Vector3(p.w, p.h, 1));
+                Show(p.quad2, true);
+            }
+            if (p.tex != p.lastTex) { SetQuadTex(p.quad.get(), p.tex); SetQuadTex(p.quad2.get(), p.tex); p.lastTex = p.tex; }
+        } else { if (p.quad.get()) Show(p.quad, false); if (p.quad2.get()) Show(p.quad2, false); }
         if (wantTxt) {
             if (!Alive(p.lbl.get())) { p.lbl.set(Label(ct, "", Vector3(p.x, p.y, 0), p.w, p.h, p.size, &p.txt)); p.lastText.clear(); p.lastSize = -1; if (G.textSetFontStyle.IsValid() && p.txt.get()) G.textSetFontStyle[p.txt.get()](0); }
             if (Il2CppObject *l = p.lbl.get()) {
@@ -7830,6 +8035,7 @@ static void PhoneItemsFor(Cat c, std::vector<Item *> &out) {
     }
     if (c == OTHERPLAYERS) for (auto &it : g_playerItems) out.push_back(&it);
     if (c == PRESETS) { PresetsEnsure(); for (auto &it : g_presetItems) out.push_back(&it); }
+    if (c == SPAWNPRESETS) { EggEnsure(); for (auto &it : g_eggItems) out.push_back(&it); }
     if (c == FAVOURITES) for (auto &it : g_items) if (it.cat != FAVOURITES && it.kind != OPEN && IsFav(it.label)) out.push_back(&it);
 }
 static void PhoneModRows() {
@@ -8107,7 +8313,7 @@ static void Extra11Reset() {
     g_phBody.clear();
     g_wallQuad.clear();
     g_phoneCanvas.clear();
-    for (auto &w : g_pw) { w.cube.clear(); w.lbl.clear(); w.txt.clear(); w.quad.clear(); w.lastText.clear(); w.lastTex = nullptr; w.lastCol = Color(-1, -1, -1, -1); w.lastTcol = Color(-1, -1, -1, -1); w.lastSize = -1; }
+    for (auto &w : g_pw) { w.cube.clear(); w.lbl.clear(); w.txt.clear(); w.quad.clear(); w.quad2.clear(); w.lastText.clear(); w.lastTex = nullptr; w.lastCol = Color(-1, -1, -1, -1); w.lastTcol = Color(-1, -1, -1, -1); w.lastSize = -1; }
     g_pwN = 0;
     g_camPC.go.clear(); g_camPC.cam.clear(); g_camPC.rt.clear();
     g_mapPC.go.clear(); g_mapPC.cam.clear(); g_mapPC.rt.clear();
@@ -8149,7 +8355,7 @@ static void WideChanged() {
     Notify(f_wideMenu ? "Wide menu" : "Normal width");
 }
 
-struct Preset { std::string name; int theme = 0, textCol = 0, pb = 0, mtype = 0, gunFx = 0, gunColor = 0, round = 0, trans = 3, wide = 0; };
+struct Preset { std::string name; int theme = 0, textCol = 0, pb = 0, mtype = 0, gunFx = 0, gunColor = 0, round = 0, trans = 3, wide = 0, outline = 0, btnOv = 0; Color btn = Color(0,0,0,0), btnOn = Color(0,0,0,0); };
 static std::vector<Preset> g_customs;
 static bool g_presetsLoaded = false;
 static std::string PresetFile() { std::string p = PersistentPath(); return p.empty() ? std::string() : p + "/leos-presets.txt"; }
@@ -8158,7 +8364,9 @@ static void PresetsSave() {
     if (f.empty()) return;
     try {
         std::ofstream o(f);
-        for (auto &p : g_customs) o << p.name << "|" << p.theme << "|" << p.textCol << "|" << p.pb << "|" << p.mtype << "|" << p.gunFx << "|" << p.gunColor << "|" << p.round << "|" << p.trans << "|" << p.wide << "\n";
+        for (auto &p : g_customs)
+            o << p.name << "|" << p.theme << "|" << p.textCol << "|" << p.pb << "|" << p.mtype << "|" << p.gunFx << "|" << p.gunColor << "|" << p.round << "|" << p.trans << "|" << p.wide
+              << "|" << p.outline << "|" << p.btnOv << "|" << p.btn.r << "|" << p.btn.g << "|" << p.btn.b << "|" << p.btnOn.r << "|" << p.btnOn.g << "|" << p.btnOn.b << "\n";
     } catch (...) {}
 }
 static void PresetsLoad() {
@@ -8176,6 +8384,11 @@ static void PresetsLoad() {
             Preset p;
             p.name = v[0]; p.theme = atoi(v[1].c_str()); p.textCol = atoi(v[2].c_str()); p.pb = atoi(v[3].c_str()); p.mtype = atoi(v[4].c_str());
             p.gunFx = atoi(v[5].c_str()); p.gunColor = atoi(v[6].c_str()); p.round = atoi(v[7].c_str()); p.trans = atoi(v[8].c_str()); p.wide = atoi(v[9].c_str());
+            if (v.size() >= 17) {
+                p.outline = atoi(v[10].c_str()); p.btnOv = atoi(v[11].c_str());
+                p.btn = Color((float)atof(v[12].c_str()), (float)atof(v[13].c_str()), (float)atof(v[14].c_str()), 1);
+                p.btnOn = Color((float)atof(v[15].c_str()), (float)atof(v[16].c_str()), (float)atof(v[17].c_str()), 1);
+            }
             g_customs.push_back(p);
         }
     } catch (...) {}
@@ -8184,15 +8397,19 @@ static Preset PresetNow(const std::string &name) {        // what the menu looks
     Preset p;
     p.name = name;
     for (auto &ch : p.name) if (ch == '|') ch = ' ';
-    p.theme = g_theme; p.textCol = g_textCol; p.pb = f_pbUnder ? 1 : f_pbBottom ? 2 : 0;
+    p.theme = g_theme; p.textCol = g_textCol; p.pb = f_pbUnder ? 1 : f_pbBottom ? 2 : f_pbModTop ? 3 : 0;
     p.mtype = f_pizza ? 1 : f_longMenu ? 2 : f_pixelMenu ? 3 : f_phoneMenu ? 4 : f_textMenu ? 5 : 0;
     p.gunFx = g_gunFx; p.gunColor = g_gunColor; p.round = g_roundLvl; p.trans = g_transLvl; p.wide = f_wideMenu ? 1 : 0;
+    p.outline = f_noOutline ? 1 : 0;
+    p.btnOv = g_btnOverride ? 1 : 0; p.btn = g_btnCol; p.btnOn = g_btnOnCol;
     return p;
 }
 static void PresetApply(const Preset &p) {
     g_theme = p.theme; g_textCol = p.textCol; g_gunFx = p.gunFx; g_gunColor = p.gunColor; g_roundLvl = p.round; g_transLvl = p.trans;
-    f_pbUnder = p.pb == 1; f_pbBottom = p.pb == 2; f_pbSides = p.pb == 0;
-    g_pbPrev[0] = f_pbUnder; g_pbPrev[1] = f_pbSides; g_pbPrev[2] = f_pbBottom;
+    f_pbUnder = p.pb == 1; f_pbBottom = p.pb == 2; f_pbModTop = p.pb == 3; f_pbSides = p.pb == 0;
+    g_pbPrev[0] = f_pbUnder; g_pbPrev[1] = f_pbSides; g_pbPrev[2] = f_pbBottom; g_pbPrev[3] = f_pbModTop;
+    f_noOutline = p.outline != 0;
+    g_btnOverride = p.btnOv != 0; g_btnCol = p.btn; g_btnOnCol = p.btnOn;
     f_pizza = p.mtype == 1; f_longMenu = p.mtype == 2; f_pixelMenu = p.mtype == 3; f_phoneMenu = p.mtype == 4; f_textMenu = p.mtype == 5;
     g_menuPrev[0] = f_pizza; g_menuPrev[1] = f_textMenu; g_menuPrev[2] = f_longMenu; g_menuPrev[3] = f_pixelMenu; g_menuPrev[4] = f_phoneMenu;
     g_page = 0;
@@ -8218,7 +8435,20 @@ static void PresetSaveCurrent(const std::string &name) {
 }
 static void PresetLeo() { Preset p; p.name = "Leo's Menu"; p.theme = 0; p.gunColor = 0; PresetApply(p); }                        // blue, normal text, side buttons, normal menu, blue pointer
 static void PresetStupid() { Preset p; p.name = "Stupid Menu"; p.theme = 1; p.gunColor = 1; PresetApply(p); }                  // orange, orange pointer
-static void PresetModder() { Preset p; p.name = "Modder 3x Menu"; p.theme = 8; p.textCol = 1; p.gunColor = 0; PresetApply(p); }   // black, red text, blue pointer
+static void PresetModder() { Preset p; p.name = "Modder 3x Menu"; p.theme = 8; p.textCol = 3; p.gunColor = 0; p.wide = 1; p.outline = 1; p.pb = 3; PresetApply(p); }   // black, purple text, wide, no outline, mod-button switcher, blue pointer
+static void PresetMalachi() {
+    Preset p;
+    p.name = "Malachi's Theme";
+    p.theme = 9; p.pb = 3;                                   // dark blue, mod-button page switcher
+    p.btnOv = 1; p.btn = Color(0.95f, 0.85f, 0.15f, 1); p.btnOn = Color(0.6f, 0.2f, 0.9f, 1);   // yellow buttons, purple when on
+    PresetApply(p);
+}
+static void PresetSeralyth() {
+    Preset p;
+    p.name = "Seralyth's Theme";
+    p.theme = 5; p.textCol = 0; p.pb = 0;                    // purple theme, white text, default (side) page switcher
+    PresetApply(p);
+}
 static void PresetAdd() {
     PresetsEnsure();
     if (PhoneActive()) { PresetSaveCurrent("Custom " + std::to_string(g_customs.size() + 1)); return; }     // no keyboard on the phone: it gets a number
@@ -8231,6 +8461,182 @@ static void PresetDelete() {
     PresetsSave();
     PresetsRebuildItems();
     Notify("Deleted the last custom preset");
+}
+
+// ============================================================================================
+// ---- Update 13: Stay Locked, Space Stars / Galaxy Sky, Fling Gun, egg fix, crash guards -----
+// ============================================================================================
+
+// ---- Stay Locked: once a gun that affects other players picks a target, it keeps that target
+// (instead of re-picking the closest every frame) until you let go of the grip. ----
+static int g_stayTarget = -1;
+static bool g_stayGripPrev = false;
+static int LockTargetPersist(Vector3 from, bool gripHeld) {
+    if (!f_stayLocked) return LockTarget(from);
+    if (!gripHeld) { g_stayTarget = -1; g_stayGripPrev = false; return LockTarget(from); }
+    if (!g_stayGripPrev) { g_stayTarget = LockTarget(from); g_stayGripPrev = true; }
+    if (g_stayTarget < 0 || !Alive(g_rig[g_stayTarget].head.get())) g_stayTarget = LockTarget(from);
+    return g_stayTarget;
+}
+
+// ---- Space Stars / Galaxy Sky: the game's skybox is swapped for a generated starfield or
+// nebula picture (a flat equirectangular image on a Skybox/Panoramic material). ----
+static Ref g_skyboxMat, g_skyboxOldMat, g_skyTex;
+static bool g_skyboxSaved = false;
+static int g_skyboxTexId = -1;                      // which picture is loaded: 0 stars, 1 galaxy
+static Il2CppObject *SkyShader() {
+    static Il2CppObject *sh = nullptr;
+    static bool tried = false;
+    if (!tried) {
+        tried = true;
+        const char *names[3] = {"Skybox/Panoramic", "Skybox/Cubemap", "Skybox/6 Sided"};
+        for (const char *n : names) {
+            try {
+                Il2CppObject *x = G.shaderFind.IsValid() ? G.shaderFind((BNM::Structures::Mono::String *)CreateMonoString(n)) : nullptr;
+                if (x) { sh = x; ym::log("leos-menu: skybox shader %s", n); break; }
+            } catch (...) {}
+        }
+    }
+    return sh;
+}
+static bool SkyboxApply(int which) {
+    static Class rsc("UnityEngine", "RenderSettings"), matC("UnityEngine", "Material");
+    static Method<Il2CppObject *> getSkybox;
+    static Method<void> setSkybox, setTex, setTexN;
+    static bool looked = false;
+    if (!looked) {
+        looked = true;
+        getSkybox = rsc.GetMethod("get_skybox", 0);
+        setSkybox = rsc.GetMethod("set_skybox", 1);
+        setTex = matC.GetMethod("set_mainTexture", 1);
+        setTexN = matC.GetMethod("SetTexture", 2);
+    }
+    Il2CppObject *sh = SkyShader();
+    if (!setSkybox.IsValid() || !getSkybox.IsValid() || !sh) return false;
+    try {
+        if (!g_skyboxSaved) { g_skyboxOldMat.set(getSkybox[nullptr]()); g_skyboxSaved = true; }
+        if (!Alive(g_skyboxMat.get())) {
+            Il2CppObject *m = matC.CreateNewObjectParameters(sh);
+            if (!m) return false;
+            g_skyboxMat.set(m);
+        }
+        if (g_skyboxTexId != which) {
+            const unsigned char *d = which ? kSkyGalaxy : kSkyStars;
+            size_t n = which ? sizeof kSkyGalaxy : sizeof kSkyStars;
+            Il2CppObject *t = TexFromBytes(d, n, g_skyTex.get());
+            if (t) { g_skyTex.set(t); g_skyboxTexId = which; }
+        }
+        Il2CppObject *m = g_skyboxMat.get();
+        if (setTex.IsValid()) setTex[m](g_skyTex.get());
+        if (setTexN.IsValid()) setTexN[m](MS("_Tex"), g_skyTex.get());
+        setSkybox[(Il2CppObject *)nullptr](m);
+        return true;
+    } catch (...) { return false; }
+}
+static void SkyboxRestore() {
+    static Class rsc("UnityEngine", "RenderSettings");
+    static Method<void> setSkybox;
+    if (!setSkybox.IsValid()) setSkybox = rsc.GetMethod("set_skybox", 1);
+    if (g_skyboxSaved && setSkybox.IsValid()) { try { setSkybox[(Il2CppObject *)nullptr](g_skyboxOldMat.get()); } catch (...) {} }
+    g_skyboxSaved = false;
+    g_skyboxOldMat.clear();
+    Kill(g_skyboxMat);
+    g_skyTex.clear();
+    g_skyboxTexId = -1;
+}
+static void SkyboxTick() {
+    static bool had = false;
+    bool want = f_spaceStars || f_galaxySky;
+    if (!want) { if (had) { SkyboxRestore(); had = false; } return; }
+    had = true;
+    static double next = 0;
+    if (g_time < next && g_skyboxTexId >= 0) return;
+    next = g_time + 2.0;
+    if (!SkyboxApply(f_galaxySky ? 1 : 0)) { f_spaceStars = f_galaxySky = false; SkyboxRestore(); had = false; Notify("Sky pictures aren't available here"); }
+}
+
+// ---- Fling Gun (Owner): points at a player and flings them with the game's own knockback
+// message (RpcApplyPlayerKnockback / SendApplyPlayerKnockback), with a slider for how hard. ----
+static const float kFlingSpeeds[] = {12.0f, 20.0f, 32.0f};
+static const char *kFlingN[] = {"Light", "Medium", "Hard"};
+static const char *FlingName(int i) { return kFlingN[i]; }
+static double g_nextFling2 = 0;
+static bool SendKnockbackRpc(Il2CppObject *target, Vector3 force) {
+    static Method<void> plSend;
+    static BNM::IL2CPP::MethodInfo *rpcKb = nullptr;
+    static bool looked = false;
+    if (!looked) {
+        looked = true;
+        Class p("", "Player", Image("Assembly-CSharp.dll"));
+        if (p.IsValid()) plSend = p.GetMethod("SendApplyKnockback", 2);
+        Class net("", "NetworkMessenger", Image("Assembly-CSharp.dll"));
+        if (net.IsValid())
+            for (auto &m : net.GetMethods(false)) {
+                auto *mi = m.GetInfo();
+                if (mi && mi->name && !strcmp(mi->name, "RpcApplyPlayerKnockback")) rpcKb = mi;
+            }
+    }
+    if (plSend.IsValid() && Alive(target)) {
+        try { plSend[target](force, (int32_t)3); return true; } catch (...) {}
+    }
+    if (!rpcKb || !G.pvRpc.IsValid() || !G.arrayNew || !G.valueBox || !G.objectClass || !G.tPhotonView || !G.netLocal.IsValid()) return false;
+    Il2CppObject *nm = G.netLocal();
+    Il2CppObject *go = nm ? G.compGameObject[nm]() : nullptr;
+    Il2CppObject *pv = go ? G.goGetComponent[go]((Il2CppObject *)G.tPhotonView) : nullptr;
+    if (!pv) return false;
+    static Method<Il2CppObject *> getUid;
+    static bool lookedUid = false;
+    if (!lookedUid) { lookedUid = true; Class p("", "Player", Image("Assembly-CSharp.dll")); if (p.IsValid()) getUid = p.GetMethod("get_userID", 0); }
+    Il2CppObject *uid = getUid.IsValid() && Alive(target) ? getUid[target]() : nullptr;
+    if (!uid) return false;
+    int count = rpcKb->parameters_count;
+    if (count > 0 && TypeName(rpcKb->parameters[count - 1]) == "Photon.Pun.PhotonMessageInfo") count--;
+    auto *args = (Il2CppObject *)G.arrayNew(G.objectClass, count);
+    if (!args) return false;
+    int strings = 0, vectors = 0, ints = 0;
+    for (int i = 0; i < count; i++) {
+        std::string tn = TypeName(rpcKb->parameters[i]);
+        Class pc(rpcKb->parameters[i]);
+        auto *k = pc.IsValid() ? pc.GetClass() : nullptr;
+        void *v = nullptr;
+        if (tn == "System.String") { if (strings == 0) v = uid; strings++; }
+        else if (tn == "UnityEngine.Vector3") { v = G.valueBox(k, &force); vectors++; }
+        else if (k && k->byval_arg.valuetype) {
+            uint8_t raw[16] = {};
+            raw[0] = ints == 0 ? 3 : 0;
+            auto *boxAs = k->enumtype && k->element_class ? k->element_class : k;
+            v = G.valueBox(boxAs, raw);
+            ints++;
+        }
+        Put(args, i, v);
+    }
+    try { G.pvRpc[pv](CreateMonoString("RpcApplyPlayerKnockback"), 0, args); return true; } catch (...) { return false; }
+}
+static void FlingGunAim(Vector3 start, Vector3 dir) {
+    if (g_time < g_nextFling2) return;
+    g_nextFling2 = g_time + 0.4;
+    EspRefresh();
+    int slot = f_targetLock ? LockTargetPersist(start, true) : -1;
+    if (slot < 0)
+        for (int i = 0; i < 16; i++) {
+            Il2CppObject *head = g_rig[i].head.get();
+            if (!Alive(head)) continue;
+            Vector3 to = G.trGetPosition[head]() - Vector3(0, 0.5f, 0) - start;
+            float t = Dot(to, dir);
+            if (t < 0.2f || t > 60.0f) continue;
+            Vector3 perp = to - dir * t;
+            if (Len2(perp) < (0.6f + 0.02f * t) * (0.6f + 0.02f * t)) { slot = i; break; }
+        }
+    if (slot < 0) { Notify("No player there"); return; }
+    Vector3 force = dir * kFlingSpeeds[g_flingPower];
+    force.y += 4.0f;
+    bool any = false;
+    for (int i = 0; i < 6; i++) {
+        Vector3 f = force;
+        f.y += (float)i * 0.4f;
+        if (SendKnockbackRpc(g_rig[slot].obj.get(), f)) any = true;
+    }
+    Notify(any ? "Flung!" : "No route to fling them (see log)");
 }
 
 static void Extra8Reset() {
@@ -8359,6 +8765,7 @@ static void OnUpdate(float dt) {
     safe("blood", [&] { BloodTick(dt); });
     safe("weapons", [&] { WeaponTick(in, dt); });
     safe("effects", [&] { FxTick(dt); });
+    safe("sky", [&] { SkyboxTick(); });
     safe("potion", [&] { static bool once = false; if (!once && g_time > 8.0) { once = true; PotionResolve(); } });
     safe("dump", [&] { DumpTick(); });
     LongArmsTick(in, dt);
